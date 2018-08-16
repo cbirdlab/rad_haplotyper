@@ -201,6 +201,10 @@ The full set of command line options is below:
         Individual samples to use in the analysis - can be used multiple
         times for multiple individuals [Default: All]
 
+-bp, --bampath
+	Path to bam files if they are not in the current working directory 
+	[Default: ""]
+
 -u, --cutoff
         Excludes loci with more than the specified number of SNPs
         [Default: No filter]
