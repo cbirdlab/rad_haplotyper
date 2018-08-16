@@ -42,6 +42,7 @@ my @samp_subset;
 my $max_paralog_inds = 1000000;
 my $max_low_cov_inds = 1000000;
 my $hap_rescue = 0.05;
+my $bampath = '';
 
 GetOptions(	'version' => \$opt_version,
 			'vcffile|v=s' => \$vcffile,
@@ -67,11 +68,20 @@ GetOptions(	'version' => \$opt_version,
 			'hap_count|h=s' => \$hap_num_filt,
 			'max_paralog_inds|mp=s' => \$max_paralog_inds,
 			'max_low_cov_inds|ml=s' => \$max_low_cov_inds,
-			'hap_rescue|z=s' => \$hap_rescue
+			'hap_rescue|z=s' => \$hap_rescue,
+			'bampath|bp=s' => \$bampath
 
 			);
 
-#open(DUMP, ">", 'debug.out') or die $!;
+#add a / at end of $bampath if it's not there
+if ($bampath ne '') {
+	my $chkslash = substr $bampath, -1;
+	if($chkslash ne '/') {
+		$bampath = "$bampath/";
+	}
+}
+
+			#open(DUMP, ">", 'debug.out') or die $!;
 
 if ($opt_version) {
 	die "Version ",  $version, "\n";
@@ -475,14 +485,14 @@ foreach my $ind (@samples) {
 
 	if ($genomic_ref) {
 	    my $bam;
-	    if (-e "$ind-RG.bam") {
-		$bam = "$ind-RG.bam";
-	    } elsif (-e "$ind.bam") {
-		$bam = "$ind.bam";
+	    if (-e "$bampath$ind-RG.bam") {
+		$bam = "$bampath$ind-RG.bam";
+	    } elsif (-e "$bampath$ind.bam") {
+		$bam = "$bampath$ind.bam";
 	    } else {
 		die "Can't find BAM file for individual: $ind";
 	    }
-	    `bedtools intersect -abam $bam -b $vcffile -wa -sorted -g genome.file| samtools view -h - | samtools view -bS - > $ind.tmp.bam`
+	    `bedtools intersect -abam $bam -b $vcffile -wa -sorted -g genome.file| samtools view -h - | samtools view -bS - > $bampath$ind.tmp.bam`
 	}
 
 
@@ -546,14 +556,14 @@ foreach my $ind (@samples) {
 		}
 
 
-		my ($hap_ref, $failed) = build_haps($locus, $ind, $reference, \%snps, \%alleles, \%indiv_index, $depth, $hap_rescue);
+		my ($hap_ref, $failed) = build_haps($locus, $ind, $reference, \%snps, \%alleles, \%indiv_index, $depth, $hap_rescue, $bampath);
 
 		@haplotypes = @{$hap_ref};
 
 
 		if ($failed) {
 			print LOG "Failed, trying to recover...\n" if $debug;
-			my ($hap_ref, $failed2) = build_haps($locus, $ind, $reference, \%snps, \%alleles, \%indiv_index, 100, $hap_rescue);
+			my ($hap_ref, $failed2) = build_haps($locus, $ind, $reference, \%snps, \%alleles, \%indiv_index, 100, $hap_rescue, $bampath);
 			if ($failed2) {
 				print LOG "Failed again...\n" if $debug;
 				$fail_codes{$locus} = $failed2;
@@ -582,7 +592,7 @@ foreach my $ind (@samples) {
 	}
 
 	if ($genomic_ref) {
-	    unlink "$ind.tmp.bam"
+	    unlink "$bampath$ind.tmp.bam"
 	}
 
 	close TEMP if $threads;
@@ -1319,6 +1329,7 @@ sub build_haps {
 	my %indiv_index = %{$_[5]};
 	my $depth = $_[6];
 	my $rescue = $_[7];
+	my $bampath = $_[8];
 
 	my $indiv_no = $indiv_index{$ind};
 
@@ -1335,16 +1346,16 @@ sub build_haps {
 	# Check to see if the dDocent version of the BAM file exists, if not, use the original name
 	my $bam;
 	if ($genomic_ref) {
-	    $bam = "$ind.tmp.bam"
+	    $bam = "$bampath$ind.tmp.bam"
 	} else {
-	    if (-e "$ind-RG.bam") {
-		$bam = "$ind-RG.bam";
-	    } elsif (-e "$ind.bam") {
-		$bam = "$ind.bam";
+	    if (-e "$bampath$ind-RG.bam") {
+			$bam = "$bampath$ind-RG.bam";
+	    } elsif (-e "$bampath$ind.bam") {
+			$bam = "$bampath$ind.bam";
 	    } else {
-		die "Can't find BAM file for individual: $ind";
+			die "Can't find BAM file for individual: $ind";
 	    }
-        }
+    }
 
 	my $sam;
 	if ($genomic_ref) {
@@ -1508,7 +1519,8 @@ sub build_haps {
 	my $total_haps;
 	my $failed;
 	print LOG $locus, ": Observed Haps:\n" if $debug;
-	print LOG Dumper(\@obs_haplotypes) if $debug;
+	print LOG Dumper(\@obs_haplotypes) if $debug;	
+
 	print LOG $locus, ": Unique Observed Haps:\n" if $debug;
 	print LOG Dumper(\@uniq_obs_haplotypes) if $debug;
 	if ($no_exp_haplotypes == scalar(@uniq_obs_haplotypes)) { # The correct number of haplotypes is observed
@@ -1535,8 +1547,8 @@ sub build_haps {
 		@uniq_obs_haplotypes = keys %keep_list;
 		my $num_haps = @obs_haplotypes;
 		my $thresh = $rescue * $num_haps;
-		print LOG $locus, ": Corrected Unique Observed Haps:\n" if $debug;
 		print LOG $locus, ": haplotype count threshold:", $thresh, "\n"  if $debug;
+		print LOG $locus, ": Corrected Unique Observed Haps:\n" if $debug;
 		print LOG Dumper(\@uniq_obs_haplotypes) if $debug;
 		if ($no_exp_haplotypes == scalar(@uniq_obs_haplotypes)) {
 			@new_haplotypes = @uniq_obs_haplotypes;
@@ -1735,7 +1747,9 @@ perl rad_haplotyper.pl -v <vcffile> [options]
 Options:
      -v	<vcffile>		input vcf file
      
-         -b	[bedfile]		BED file containing regions to be haplotyped
+	 -bp [bampath]		path to bam files (optional)
+
+	 -b	[bedfile]		BED file containing regions to be haplotyped
 
 	 -s	[samples]		optionally specify an individual sample to be haplotyped
 
@@ -1787,6 +1801,10 @@ Options:
 =item B<-v, --vcffile>
 
 VCF input file
+
+=item B<-bp, --bampath>
+
+Path to bam files if they are not in the current working directory (optional)
 
 =item B<-r, --reference>
 
